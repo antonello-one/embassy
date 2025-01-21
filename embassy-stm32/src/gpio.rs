@@ -5,6 +5,8 @@ use core::convert::Infallible;
 
 use critical_section::CriticalSection;
 use embassy_hal_internal::{impl_peripheral, into_ref, PeripheralRef};
+#[cfg(feature = "time")]
+use embassy_time::{Duration, Timer};
 
 use crate::pac::gpio::{self, vals};
 use crate::{peripherals, Peripheral};
@@ -332,6 +334,54 @@ impl<'d> Input<'d> {
     #[inline]
     pub fn get_level(&self) -> Level {
         self.pin.get_level()
+    }
+}
+
+#[cfg(feature = "time")]
+impl<'d> embedded_hal_async::digital::Wait for Input<'d> {
+    async fn wait_for_high(&mut self) -> Result<(), Self::Error> {
+        loop {
+            if self.is_high() {
+                return Ok(());
+            }
+            let timer = Timer::after(Duration::from_micros(10));
+            timer.await;
+        }
+    }
+
+    async fn wait_for_low(&mut self) -> Result<(), Self::Error> {
+        loop {
+            if self.is_low() {
+                return Ok(());
+            }
+            let timer = Timer::after(Duration::from_micros(10));
+            timer.await;
+        }
+    }
+
+    async fn wait_for_rising_edge(&mut self) -> Result<(), Self::Error> {
+        if self.is_high() {
+            self.wait_for_low().await?;
+        }
+        self.wait_for_high().await?;
+        Ok(())
+    }
+
+    async fn wait_for_falling_edge(&mut self) -> Result<(), Self::Error> {
+        if self.is_low() {
+            self.wait_for_high().await?;
+        }
+        self.wait_for_low().await?;
+        Ok(())
+    }
+
+    async fn wait_for_any_edge(&mut self) -> Result<(), Self::Error> {
+        if self.is_low() {
+            self.wait_for_high().await?;
+        } else {
+            self.wait_for_low().await?;
+        }
+        Ok(())
     }
 }
 
